@@ -24,6 +24,9 @@ static int64_t ticks;
    Initialized by timer_calibrate(). */
 static unsigned loops_per_tick;
 
+// 대기 스레드 보관용 전역 리스트
+static struct list sleep_list;
+
 static intr_handler_func timer_interrupt;
 static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
@@ -43,6 +46,8 @@ timer_init (void) {
 	outb (0x40, count >> 8);
 
 	intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+
+	list_init (&sleep_list); // sleep list 초기화
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -93,8 +98,25 @@ timer_sleep (int64_t ticks) {
 	int64_t start = timer_ticks ();
 
 	ASSERT (intr_get_level () == INTR_ON);
-	while (timer_elapsed (start) < ticks)
-		thread_yield ();
+	// while (timer_elapsed (start) < ticks)
+	// 	thread_yield ();
+
+	int64_t wakeup_time = start + ticks; // 깨어날 시간
+
+	struct thread *curr = thread_current; // 현재 스레드
+	curr->wakeup_tick = wakeup_time; // 이 스레드가 일어나는 시간
+
+	// 인터럽트 비활성화
+	enum intr_level old_level = intr_disable (); // intr_disable () 은 직전의 인터럽트 상태를 반환. 그걸 저장함
+
+	// sleep list에 현재 스레드 삽입
+	list_push_back (&sleep_list, &curr->elem);
+
+	// 스레드를 대기(Blocked) 상태로 전환
+    thread_block ();
+
+	// 인터럽트 활성화
+	intr_set_level (old_level); // intr_set_level은 on이면 off로, off면 on으로 바꿔준다
 }
 
 /* Suspends execution for approximately MS milliseconds. */
