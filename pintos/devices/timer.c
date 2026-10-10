@@ -103,7 +103,7 @@ timer_sleep (int64_t ticks) {
 
 	int64_t wakeup_time = start + ticks; // 깨어날 시간
 
-	struct thread *curr = thread_current; // 현재 스레드
+	struct thread *curr = thread_current(); // 현재 스레드
 	curr->wakeup_tick = wakeup_time; // 이 스레드가 일어나는 시간
 
 	// 인터럽트 비활성화
@@ -148,6 +148,8 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
 	thread_tick ();
+
+	// 깨우는 로직
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
