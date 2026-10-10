@@ -28,12 +28,14 @@ static intr_handler_func timer_interrupt;
 static bool too_many_loops(unsigned loops);
 static void busy_wait(int64_t loops);
 static void real_time_sleep(int64_t num, int32_t denom);
-static struct list sleep_list; // sleep list 추가 (잠자야할 스레드들 모아두는 곳)
-static bool compare_ticks(const struct list_elem *a, const struct list_elem *b, void *aux)
-{
+static struct list sleep_list;									  // sleep list 추가 (잠자야할 스레드들 모아두는 곳)
+static bool compare_ticks(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) // tick 비교 list.h 파일에
+// typedef bool list_less_func 구조로 참고해서 만듦
+{ //
 	struct thread *ta = list_entry(a, struct thread, elem);
 	struct thread *tb = list_entry(b, struct thread, elem);
-	return ta->wakeup_tick < tb->wakeup_tick;
+	return ta->wakeup_tick < tb->wakeup_tick; // a가 b보다 작으면
+						  // 참 반환 아니면 거짓 반환
 }
 
 /* Sets up the 8254 Programmable Interval Timer (PIT) to
@@ -50,7 +52,7 @@ void timer_init(void)
 	outb(0x40, count >> 8);
 
 	intr_register_ext(0x20, timer_interrupt, "8254 Timer");
-	list_init(&sleep_list);
+	list_init(&sleep_list); // 슬립 리스트 초기화
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -102,23 +104,20 @@ timer_elapsed(int64_t then)
 void timer_sleep(int64_t ticks)
 {
 	struct thread *curr = thread_current(); // 현재 스레드
-	int64_t start = timer_ticks();
-	enum intr_level old_level;
+	int64_t start = timer_ticks();		// 원래있던거
+	enum intr_level old_level;		// 인터럽트 상태 적어둘 변수
 	curr->wakeup_tick = start + ticks;
 	// 깨어날시간= 시작시간+틱수
 
 	ASSERT(intr_get_level() == INTR_ON);
-	if (ticks >= 0)
+	if (ticks <= 0)
 		return;
-	old_level = intr_disable(); // 인터럽트 끄기
+	old_level = intr_disable(); // 인터럽트 끄고 끄기 직전 상태old_level 저장
 
 	list_insert_ordered(&sleep_list, &curr->elem, compare_ticks, NULL);
-	sleep(); // 진짜로 재우기
+	thread_block(); // 재우기
 
-	// sleep list에 넣기
-	intr_set_level(old_level); // 인터럽트 활성화
-				   //  while (timer_elapsed(start) < ticks)
-				   //  thread_yield();
+	intr_set_level(old_level); // 인터럽트 활성화 원래대로 되돌림
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -150,7 +149,18 @@ static void
 timer_interrupt(struct intr_frame *args UNUSED)
 {
 	ticks++;
-	thread_tick();
+	while (!list_empty(&sleep_list))						     // sleep_list가 비어있지 않는동안
+	{										     // t =먼저 깨어날 스레드
+		struct thread *t = list_entry(list_front(&sleep_list), struct thread, elem); // 맨 앞 스레드 주소 가져와서 리스트엔트리로 시작주소 바꿈
+
+		if (t->wakeup_tick > ticks) // 맨 앞 스레드 깰 시각이
+			// 아직 안됐으면 멈춤
+			break;
+		list_pop_front(&sleep_list); // 맨 앞 리스트 꺼내기
+		thread_unblock(t);	     // block을 레디로 바꿈
+	}
+
+	thread_tick(); // 원래 있던 코드 통계 기록
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
