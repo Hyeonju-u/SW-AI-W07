@@ -149,7 +149,28 @@ timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
 	thread_tick ();
 
-	// 깨우는 로직
+	/* 깨우는 로직 */
+	// sleep list의 가장 앞을 잡음
+	struct list_elem *e = list_begin (&sleep_list);
+
+    // 리스트의 끝에 도달할 때까지 순회
+    while (e != list_end (&sleep_list)) {
+        // list_elem으로부터 struct thread의 포인터를 얻어옴
+        struct thread *t = list_entry (e, struct thread, elem);
+        
+        // 깨워야 하는 시각(wakeup_tick)이 현재 시각(ticks)보다 작거나 같은지 확인
+        if (ticks >= t->wakeup_tick) {
+            // sleep_list에서 제거
+            // list_remove는 요소를 지운 뒤, 끊어지지 않게 다음 요소의 포인터를 반환해 줍니다.
+            e = list_remove (e);
+            
+            // 블록 상태 해제 및 ready_list에 추가
+            thread_unblock (t);
+        } else {
+            // 아직 깰 시간이 안 되었다면 다음 요소로 넘어감
+            e = list_next (e);
+        }
+    }
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
