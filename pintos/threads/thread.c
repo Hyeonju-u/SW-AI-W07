@@ -63,11 +63,11 @@ static void do_schedule(int status);
 static void schedule(void);
 static tid_t allocate_tid(void);
 bool compare_pr(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
-{
-	// tick 비교 list.h 파일에// typedef bool list_less_func 구조로 참고해서 만듦
+{ // a의 우선 순위가 b보다 높으면 true ->a가 리스트 앞에 온다
+
 	struct thread *ta = list_entry(a, struct thread, elem);
 	struct thread *tb = list_entry(b, struct thread, elem);
-	return ta->priority > tb->priority; // 우선순위a가 b보다 크면 참반환아니면거짓반환
+	return ta->priority > tb->priority;
 }
 
 void priority_yield(void)
@@ -338,7 +338,7 @@ void thread_set_priority(int new_priority)
 	// struct thread *curr = thread_current();
 	priority_yield();
 	// if (!list_empty(&ready_list))
-	// {										     // ready list가 비어있지않고
+	// {// ready list가 비어있지않고
 	// struct thread *t = list_entry(list_front(&ready_list), struct thread, elem); // 맨 앞 스레드 가져오기
 	// 	if (t->priority > curr->priority)
 	// thread_yield();

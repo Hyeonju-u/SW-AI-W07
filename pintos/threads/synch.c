@@ -83,7 +83,7 @@ void sema_down(struct semaphore *sema)
 
 		thread_block(); // 스레드 잠듦
 	} // 누가 깨우면 다시 while 문 반복
-	sema->value--; // 값에서 하나 가져감?
+	sema->value--; // 값에서 하나 가져감
 	intr_set_level(old_level);
 }
 
@@ -264,7 +264,7 @@ struct semaphore_elem
 };
 
 bool compare_sema(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
-
+//
 {
 	struct semaphore_elem *sa = list_entry(a, struct semaphore_elem, elem);
 	struct semaphore_elem *sb = list_entry(b, struct semaphore_elem, elem);
@@ -272,7 +272,7 @@ bool compare_sema(const struct list_elem *a, const struct list_elem *b, void *au
 	struct thread *ta = list_entry(list_front(&sa->semaphore.waiters), struct thread, elem);
 	struct thread *tb = list_entry(list_front(&sb->semaphore.waiters), struct thread, elem);
 
-	return ta->priority > tb->priority; // 우선순위a가 b보다 크면 참반환아니면거짓반환
+	return ta->priority > tb->priority;
 }
 
 /* Initializes condition variable COND.  A condition variable
@@ -309,20 +309,14 @@ void cond_wait(struct condition *cond, struct lock *lock)
 {
 
 	struct semaphore_elem waiter;
-	// bool compare_sema(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
-	// {
-	// 	struct semaphore_elem *sa = list_entry(a, struct semaphore_elem, elem);
-	// 	struct semaphore_elem *sb = list_entry(b, struct semaphore_elem, elem);
-	// 	return sa->priority > sb->priority;
 
 	ASSERT(cond != NULL);
 	ASSERT(lock != NULL);
 	ASSERT(!intr_context());
 	ASSERT(lock_held_by_current_thread(lock));
 
-	sema_init(&waiter.semaphore, 0);
+	sema_init(&waiter.semaphore, 0); // vaule 0
 	list_push_back(&cond->waiters, &waiter.elem);
-	// list_insert_ordered(&cond->waiters, &waiter.elem, compare_pr, NULL); // 우선순위 정렬 추가??
 	lock_release(lock);
 	sema_down(&waiter.semaphore);
 	lock_acquire(lock);
