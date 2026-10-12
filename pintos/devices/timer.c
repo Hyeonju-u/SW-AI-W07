@@ -34,8 +34,7 @@ static bool compare_ticks(const struct list_elem *a, const struct list_elem *b, 
 { //
 	struct thread *ta = list_entry(a, struct thread, elem);
 	struct thread *tb = list_entry(b, struct thread, elem);
-	return ta->wakeup_tick < tb->wakeup_tick; // a가 b보다 작으면
-						  // 참 반환 아니면 거짓 반환
+	return ta->wakeup_tick < tb->wakeup_tick; // a가 b보다 작으면 참 반환 아니면 거짓 반환
 }
 
 /* Sets up the 8254 Programmable Interval Timer (PIT) to

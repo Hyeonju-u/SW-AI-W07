@@ -26,8 +26,8 @@
 
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
-static struct list ready_list;
-static struct list sleep_list; // sleep list 추가
+static struct list ready_list; // 레디리스트에 넣을때 우선순위로 넣는다 넣은다음 새 스레드 지금 스레드 우선순위 비교
+// static struct list sleep_list; // sleep list 추가
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -62,6 +62,23 @@ static void init_thread(struct thread *, const char *name, int priority);
 static void do_schedule(int status);
 static void schedule(void);
 static tid_t allocate_tid(void);
+bool compare_pr(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+	// tick 비교 list.h 파일에// typedef bool list_less_func 구조로 참고해서 만듦
+	struct thread *ta = list_entry(a, struct thread, elem);
+	struct thread *tb = list_entry(b, struct thread, elem);
+	return ta->priority > tb->priority; // 우선순위a가 b보다 크면 참반환아니면거짓반환
+}
+
+void priority_yield(void)
+{
+	if (!list_empty(&ready_list))
+	{
+		struct thread *t = list_entry(list_front(&ready_list), struct thread, elem); // 맨 앞 스레드 가져오기
+		if (t->priority > thread_current()->priority)
+			thread_yield();
+	}
+}
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -176,14 +193,15 @@ void thread_print_stats(void)
    Priority scheduling is the goal of Problem 1-3. */
 tid_t thread_create(const char *name, int priority,
 		    thread_func *function, void *aux)
-{
-	struct thread *t;
-	tid_t tid;
+{						// 여기에서 처음 우선 순위를 정한다
+	struct thread *t;			// 스레드 담을 구조체 변수
+	tid_t tid;				// 스레드 넘버 1,2,3
+	struct thread *curr = thread_current(); // 현재 스레드
 
 	ASSERT(function != NULL);
 
 	/* Allocate thread. */
-	t = palloc_get_page(PAL_ZERO);
+	t = palloc_get_page(PAL_ZERO); // 4KB 페이지 단위로 메모리를 할당 및 0으로 초기화
 	if (t == NULL)
 		return TID_ERROR;
 
@@ -201,9 +219,13 @@ tid_t thread_create(const char *name, int priority,
 	t->tf.ss = SEL_KDSEG;
 	t->tf.cs = SEL_KCSEG;
 	t->tf.eflags = FLAG_IF;
-
+	// 새 스레드의 우선순위가 현재 스레드 보다 높다면 cpu를 양보
 	/* Add to run queue. */
 	thread_unblock(t);
+
+	// 레디리스트에 우선순위 순으로 넣게 수정
+	if (t->priority > curr->priority)
+		thread_yield();
 
 	return tid;
 }
@@ -230,7 +252,7 @@ void thread_block(void)
    be important: if the caller had disabled interrupts itself,
    it may expect that it can atomically unblock a thread and
    update other data. */
-void thread_unblock(struct thread *t)
+void thread_unblock(struct thread *t) // 레디리스트에 우선 순위 순으로 넣기
 {
 	enum intr_level old_level;
 
@@ -238,7 +260,8 @@ void thread_unblock(struct thread *t)
 
 	old_level = intr_disable();
 	ASSERT(t->status == THREAD_BLOCKED);
-	list_push_back(&ready_list, &t->elem);
+	// list_push_back(&ready_list, &t->elem);//삭제
+	list_insert_ordered(&ready_list, &t->elem, compare_pr, NULL); // 우선 순위 정렬 추가
 	t->status = THREAD_READY;
 	intr_set_level(old_level);
 }
@@ -303,7 +326,7 @@ void thread_yield(void)
 
 	old_level = intr_disable();
 	if (curr != idle_thread)
-		list_push_back(&ready_list, &curr->elem);
+		list_insert_ordered(&ready_list, &curr->elem, compare_pr, NULL); // 우선 순위 정렬 추가
 	do_schedule(THREAD_READY);
 	intr_set_level(old_level);
 }
@@ -312,11 +335,18 @@ void thread_yield(void)
 void thread_set_priority(int new_priority)
 {
 	thread_current()->priority = new_priority;
+	// struct thread *curr = thread_current();
+	priority_yield();
+	// if (!list_empty(&ready_list))
+	// {										     // ready list가 비어있지않고
+	// struct thread *t = list_entry(list_front(&ready_list), struct thread, elem); // 맨 앞 스레드 가져오기
+	// 	if (t->priority > curr->priority)
+	// thread_yield();
 }
 
 /* Returns the current thread's priority. */
 int thread_get_priority(void)
-{
+{ // 지금 스레드 우선순위 돌려주기 지금 우선 순위가 얼마인지 확인하는 함수
 	return thread_current()->priority;
 }
 
@@ -546,7 +576,7 @@ do_schedule(int status)
 
 static void
 schedule(void)
-{
+{ // 새 스레드가 더 높으면 지금 스레드가 cpu를 양보한다
 	struct thread *curr = running_thread();
 	struct thread *next = next_thread_to_run();
 
@@ -567,7 +597,7 @@ schedule(void)
 	if (curr != next)
 	{
 		/* If the thread we switched from is dying, destroy its struct
-		   thread. This must happen late so that thread_exit() doesn't
+		   thread.  must happen late so that thread_exit() doesn't
 		   pull out the rug under itself.
 		   We just queuing the page free reqeust here because the page is
 		   currently used by the stack.

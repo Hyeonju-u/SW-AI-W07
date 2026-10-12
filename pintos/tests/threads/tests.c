@@ -25,9 +25,9 @@ static const struct test tests[] =
         {"priority-donate-sema", test_priority_donate_sema},   // 파일확인
         {"priority-donate-lower", test_priority_donate_lower}, // 파일확인
         {"priority-donate-chain", test_priority_donate_chain}, // 파일확인
-        {"priority-fifo", test_priority_fifo},                 // 파일확인//에러남
+        {"priority-fifo", test_priority_fifo},                 // 파일확인pass
         {"priority-preempt", test_priority_preempt},           // 파일확인
-        {"priority-sema", test_priority_sema},                 // 파일확인
+        {"priority-sema", test_priority_sema},                 // 파일확인 error
         {"priority-condvar", test_priority_condvar},           // 파일확인
         {"mlfqs-load-1", test_mlfqs_load_1},                   // 파일확인
         {"mlfqs-load-60", test_mlfqs_load_60},
