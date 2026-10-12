@@ -32,6 +32,8 @@ static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 
+static bool cmp_wakeup_time (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+
 /* Sets up the 8254 Programmable Interval Timer (PIT) to
    interrupt PIT_FREQ times per second, and registers the
    corresponding interrupt. */
@@ -109,14 +111,23 @@ timer_sleep (int64_t ticks) {
 	// 인터럽트 비활성화
 	enum intr_level old_level = intr_disable (); // intr_disable () 은 직전의 인터럽트 상태를 반환. 그걸 저장함
 
-	// sleep list에 현재 스레드 삽입
-	list_push_back (&sleep_list, &curr->elem);
+	// sleep list에 현재 스레드 정렬 삽입
+	list_insert_ordered (&sleep_list, &curr->elem, cmp_wakeup_time, NULL);
 
 	// 스레드를 대기(Blocked) 상태로 전환
     thread_block ();
 
 	// 인터럽트 활성화
 	intr_set_level (old_level); // intr_set_level은 on이면 off로, off면 on으로 바꿔준다
+}
+
+/* a의 깨울 시각이 b보다 빠르면 a를 앞에 둔다. */
+static bool
+cmp_wakeup_time (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
+	const struct thread *ta = list_entry (a, struct thread, elem);
+	const struct thread *tb = list_entry (b, struct thread, elem);
+	
+	return ta->wakeup_tick < tb->wakeup_tick;
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -146,31 +157,34 @@ timer_print_stats (void) {
 /* Timer interrupt handler. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED) {
-	ticks++;
+	// 인터럽트 종료 시점에 CPU 양보 여부 플래그
+	bool should_yield = false;
+
+  	ticks++;
 	thread_tick ();
 
-	/* 깨우는 로직 */
-	// sleep list의 가장 앞을 잡음
-	struct list_elem *e = list_begin (&sleep_list);
+	// sleep list가 빌 때까지
+	while (!list_empty (&sleep_list))
+    {
+    	// 리스트 전체 탐색 X. 맨 앞에 있는 애만 본다 (정렬되어 있으니까)
+		struct thread *t = list_entry (list_front (&sleep_list), struct thread, elem);
 
-    // 리스트의 끝에 도달할 때까지 순회
-    while (e != list_end (&sleep_list)) {
-        // list_elem으로부터 struct thread의 포인터를 얻어옴
-        struct thread *t = list_entry (e, struct thread, elem);
-        
-        // 깨워야 하는 시각(wakeup_tick)이 현재 시각(ticks)보다 작거나 같은지 확인
-        if (ticks >= t->wakeup_tick) {
-            // sleep_list에서 제거
-            // list_remove는 요소를 지운 뒤, 끊어지지 않게 다음 요소의 포인터를 반환해 줍니다.
-            e = list_remove (e);
-            
-            // 블록 상태 해제 및 ready_list에 추가
-            thread_unblock (t);
-        } else {
-            // 아직 깰 시간이 안 되었다면 다음 요소로 넘어감
-            e = list_next (e);
-        }
+    	// 가장 앞에 있는 애 시간 아직이면 break
+		if (t->wakeup_tick > ticks)
+        	break;
+
+		list_pop_front (&sleep_list); // 맨 앞에 놈 뽑기
+    	thread_unblock (t); // 언블락, 레디 리스트에 넣음
+
+    	// 원래 있던 놈이랑 새로 뽑은 놈 우선순위 비교
+		if (t->priority > thread_current ()->priority)
+			should_yield = true;
     }
+
+	// 새로 뽑은 놈이 더 먼저면 CPU 넘겨주세용
+	// 인터럽트 도중에는 thread_yield를 직접 부르면 안됨!!
+	if (should_yield)
+    	intr_yield_on_return ();
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
