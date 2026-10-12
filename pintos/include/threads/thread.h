@@ -147,4 +147,6 @@ int thread_get_load_avg(void);
 void do_iret(struct intr_frame *tf);
 void priority_yield(void); // 우선순위 양보 추가
 bool compare_pr(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+bool compare_sema(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+
 #endif /* threads/thread.h */
