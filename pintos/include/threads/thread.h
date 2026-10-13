@@ -23,6 +23,8 @@ enum thread_status {
 typedef int tid_t;
 #define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
 
+struct lock;
+
 /* Thread priorities. */
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
@@ -91,7 +93,11 @@ struct thread {
 	enum thread_status status;          /* Thread state. */
 	char name[16];                      /* Name (for debugging purposes). */
 	int priority;                       /* Priority. */
+	int init_priority;                  /* Priority without donation. */
 	int64_t wakeup_tick; // 이 스레드가 깨어나야 하는 시간
+	struct lock *wait_on_lock;          /* Lock this thread is waiting on. */
+	struct list donations;              /* Threads donating priority to this one. */
+	struct list_elem donation_elem;     /* Element in another thread's donations. */
 
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
@@ -133,6 +139,7 @@ const char *thread_name (void);
 
 void thread_exit (void) NO_RETURN;
 void thread_yield (void);
+void thread_refresh_priority (struct thread *);
 
 int thread_get_priority (void);
 void thread_set_priority (int);

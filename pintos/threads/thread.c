@@ -327,6 +327,25 @@ cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UN
 	return thread_a->priority > thread_b->priority;
 }
 
+/* Recomputes T's effective priority from its base priority and donors. */
+void
+thread_refresh_priority (struct thread *t) {
+	struct list_elem *e;
+	int priority = t->init_priority;
+	int old_priority = t->priority;
+
+	for (e = list_begin (&t->donations); e != list_end (&t->donations); e = list_next (e)) {
+		struct thread *donor = list_entry (e, struct thread, donation_elem);
+		if (donor->priority > priority)
+			priority = donor->priority;
+	}
+	t->priority = priority;
+	if (t->status == THREAD_READY && priority != old_priority) {
+		list_remove (&t->elem);
+		list_insert_ordered (&ready_list, &t->elem, cmp_priority, NULL);
+	}
+}
+
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
@@ -334,7 +353,8 @@ thread_set_priority (int new_priority) {
 	enum intr_level old_level = intr_disable (); // 상태 저장
 	bool should_yield = false; // 양보해야함?
 
-  	curr->priority = new_priority; 
+	curr->init_priority = new_priority;
+	thread_refresh_priority (curr);
 
   	if (!list_empty (&ready_list))
     { // 가장 앞에 있는 스레드 가져옴
@@ -442,6 +462,9 @@ init_thread (struct thread *t, const char *name, int priority) {
 	strlcpy (t->name, name, sizeof t->name);
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
+	t->init_priority = priority;
+	t->wait_on_lock = NULL;
+	list_init (&t->donations);
 	t->magic = THREAD_MAGIC;
 }
 
