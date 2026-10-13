@@ -33,6 +33,7 @@
 #include "threads/thread.h"
 
 static bool cmp_sema_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+static bool cmp_condvar_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
@@ -283,7 +284,20 @@ lock_held_by_current_thread (const struct lock *lock) {
 struct semaphore_elem {
 	struct list_elem elem;              /* List element. */
 	struct semaphore semaphore;         /* This semaphore. */
+   int priority; // 스레드 우선순위
 };
+
+// 조건변수 우선순위 비교 함수
+static bool
+cmp_condvar_priority (const struct list_elem *a,
+                    const struct list_elem *b,
+                    void *aux UNUSED)
+{
+   const struct semaphore_elem *waiter_a = list_entry (a, struct semaphore_elem, elem);
+   const struct semaphore_elem *waiter_b = list_entry (b, struct semaphore_elem, elem);
+
+   return waiter_a->priority > waiter_b->priority;
+}
 
 /* Initializes condition variable COND.  A condition variable
    allows one piece of code to signal a condition and cooperating
@@ -317,18 +331,23 @@ cond_init (struct condition *cond) {
    we need to sleep. */
 void
 cond_wait (struct condition *cond, struct lock *lock) {
-	struct semaphore_elem waiter;
+   struct semaphore_elem waiter;
 
 	ASSERT (cond != NULL);
 	ASSERT (lock != NULL);
 	ASSERT (!intr_context ());
 	ASSERT (lock_held_by_current_thread (lock));
 
-	sema_init (&waiter.semaphore, 0);
-	list_push_back (&cond->waiters, &waiter.elem);
-	lock_release (lock);
-	sema_down (&waiter.semaphore);
-	lock_acquire (lock);
+   sema_init (&waiter.semaphore, 0);
+
+   // 이 스레드의 우선순위를 대기 항목에 저장
+   waiter.priority = thread_get_priority ();
+   // 높은 우선순위 대기자가 앞에 오도록 조건변수 목록에 넣음
+   list_insert_ordered (&cond->waiters, &waiter.elem, cmp_condvar_priority, NULL);
+
+   lock_release (lock);
+   sema_down (&waiter.semaphore);
+   lock_acquire (lock);
 }
 
 /* If any threads are waiting on COND (protected by LOCK), then
