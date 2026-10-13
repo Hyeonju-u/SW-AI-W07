@@ -330,7 +330,22 @@ cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UN
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
-	thread_current ()->priority = new_priority;
+	struct thread *curr = thread_current (); // 현재 실행중인 스레드 가져옴
+	enum intr_level old_level = intr_disable (); // 상태 저장
+	bool should_yield = false; // 양보해야함?
+
+  	curr->priority = new_priority; 
+
+  	if (!list_empty (&ready_list))
+    { // 가장 앞에 있는 스레드 가져옴
+    	struct thread *highest = list_entry (list_front (&ready_list), struct thread, elem);
+		should_yield = highest->priority > curr->priority;
+    }
+
+	intr_set_level (old_level);
+
+	if (should_yield)
+    	thread_yield ();
 }
 
 /* Returns the current thread's priority. */
