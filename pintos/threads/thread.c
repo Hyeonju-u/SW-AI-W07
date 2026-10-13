@@ -29,7 +29,7 @@
 static struct list ready_list; // 레디리스트에 넣을때 우선순위로 넣는다 넣은다음 새 스레드 지금 스레드 우선순위 비교
 // static struct list sleep_list; // sleep list 추가
 /* Idle thread. */
-static struct list donation;
+// static struct list donation;
 static struct thread *idle_thread;
 
 /* Initial thread, the thread running init.c:main(). */
@@ -335,14 +335,19 @@ void thread_yield(void)
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void thread_set_priority(int new_priority)
 { // 도네이션을 고려해서 새로운 우선 순위 설정 새 우선순위를 원래 우선순위로 저장하고 기부받은 값이 더 높으면 그게 유지하도록 해야함
-	thread_current()->priority = new_priority;
-	// struct thread *curr = thread_current();
-	priority_yield();
-	// if (!list_empty(&ready_list))
-	// {// ready list가 비어있지않고
-	// struct thread *t = list_entry(list_front(&ready_list), struct thread, elem); // 맨 앞 스레드 가져오기
-	// 	if (t->priority > curr->priority)
-	// thread_yield();
+	struct thread *curr = thread_current();
+	curr->init_priority = new_priority;
+	curr->priority = curr->init_priority;		   // 기부 전 원래 우선순위로 시작
+	struct list_elem *e = list_begin(&curr->donation); // e를 명단 처음에 놓기
+	while (e != list_end(&curr->donation))		   // 명단 끝까지 도착할때까지
+	{
+		struct thread *t = list_entry(e, struct thread, donation_elem);
+		if (t->priority > curr->priority)
+			curr->priority = t->priority; // t 남은 기부자 중 더 높은 우선순위가 있으면 그 값으로 갱신
+		e = list_next(e);
+
+		priority_yield();
+	}
 }
 
 /* Returns the current thread's priority. */

@@ -23,7 +23,7 @@ static const struct test tests[] =
         {"priority-donate-multiple2", test_priority_donate_multiple2},
         {"priority-donate-nest", test_priority_donate_nest},   // 파일확인
         {"priority-donate-sema", test_priority_donate_sema},   // 파일확인
-        {"priority-donate-lower", test_priority_donate_lower}, // 파일확인
+        {"priority-donate-lower", test_priority_donate_lower}, // 파일확인 error
         {"priority-donate-chain", test_priority_donate_chain}, // 파일확인
         {"priority-fifo", test_priority_fifo},                 // 파일확인pass
         {"priority-preempt", test_priority_preempt},           // 파일확인

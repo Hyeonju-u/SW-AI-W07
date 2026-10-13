@@ -197,21 +197,34 @@ void lock_init(struct lock *lock)
    we need to sleep. */
 void lock_acquire(struct lock *lock)
 { // 락을 바로 못 얻으면(이미 누가 갖고있으면) 그 락의 주소를 저장해둔다 내가 어떤 락을 기다리는지 기록 하는것 wait_on_lock 현재 우선순위를 저장해두고 기부받은 스레드 들을 리스트에 유지한다(멀티플 도네이션) 락 여러개에서 각각 기부가 들어올 수 있으니 리스트로 관리, 우선순위를 기부, 락 홀더에게 내 높은 우선 순위를 넘겨주는 단계
+	// 락이 빌때까지 기다렸다가 받으면 주인으로 기록하는 함수
 	ASSERT(lock != NULL);
 	ASSERT(!intr_context());
 	ASSERT(!lock_held_by_current_thread(lock));
-	struct thread *curr = thread_current();
+	struct thread *curr = thread_current(); // 락을 요청한 스레드(나)
 
 	if (lock->holder != NULL) // holder를 가지고있으면
 	{
 		curr->wait_on_lock = lock;
-		//  lock을 curr->wait_on_lock 리스트에 넣어서 기다림
+		//  lock을 curr->wait_on_lock 리스트에 넣음
 		list_push_back(&lock->holder->donation, &curr->donation_elem); // holder 명단에 내 donation 요소를 넣음
 
-		if (lock->holder->priority < curr->priority)
+		struct thread *t = curr; // 지금 보고있는 스레드 나부터 시작
+		int depth = 0;		 // 깊이 몇단계 따라갔는지
+		while (t->wait_on_lock != NULL && depth < 8)
+		{ // t가 기다리는 락이 있는 동안 8단계 넘으면 멈춤
+			struct thread *holder = t = t->wait_on_lock->holder;
+			// t가 기다리는 락의 주인 =이번에 우선순위 올려줄 스레드
+			if (holder->priority < curr->priority)
+				holder->priority = curr->priority;
+			// 홀더가 나보다 낮으면 홀더의 우선순위를 내값으로 올림
+			depth++; // 한단계 증가
+		}
 
-			lock->holder->priority = curr->priority;
-		// holder의 우선순위 보다 내 우선순위가 크면 내 우선순위를 holder의 우선순위 값으로
+		// if (lock->holder->priority < curr->priority)
+
+		// 	lock->holder->priority = curr->priority;
+		// holder의 우선순위 보다 내 우선순위가 크면 내 우선순위를 내 값으로 올림
 	}
 	sema_down(&lock->semaphore);
 	// 락 받을때까지 재움
@@ -249,32 +262,33 @@ bool lock_try_acquire(struct lock *lock)
 void lock_release(struct lock *lock)
 { // 락을 풀때 그 락때문에 기부해준 스레드를 도네이션 리스트에서 제거를 하고 우선순위를 적절하게 재설정하기
 	ASSERT(lock != NULL);
-	ASSERT(lock_held_by_current_thread(lock));
-	struct thread *curr = thread_current();
+	ASSERT(lock_held_by_current_thread(lock)); // 이 rock을 쥔 사람만 반납 가능
+	struct thread *curr = thread_current();	   // 현재스레드
 	struct list_elem *e = list_begin(&curr->donation);
 	// 기부한 명단 처음부터 시작
-	while (e != list_end(&curr->donation)) // 명단끝까지 가서 e가 빌때까지
+	while (e != list_end(&curr->donation)) // 나한테 기부한 명단 끝까지 가서 e가 빌때까지
 	{
-		struct thread *t = list_entry(e, struct thread, donation_elem);
+		struct thread *t = list_entry(e, struct thread, donation_elem); // list_entry로 그 멤버가 속한 struct thread의 시작주소를 계산 t에다가 대입 t->priority,t->wait)on_block 접근 가능
+
 		if (t->wait_on_lock == lock)
 			// 기부자가 기다린 락이랑 지금 락이랑 같으면
 			e = list_remove(e); // 명단에서 제거
 		else
 			e = list_next(e); // 아니면 그냥 다음칸으로
 	}
-	// 우선순위 다시 계산
-	curr->priority = curr->init_priority; // 원래 우선순위로 설정
-	e = list_begin(&curr->donation);      // e를 명단 처음에 놓기
-	while (e != list_end(&curr->donation))
+	// 명단에 남은 우선순위 다시 계산
+	curr->priority = curr->init_priority;		   // 기부 전 원래 우선순위로 시작
+	struct list_elem *e = list_begin(&curr->donation); // e를 명단 처음에 놓기
+	while (e != list_end(&curr->donation))		   // 명단 끝까지 도착할때까지
 	{
 		struct thread *t = list_entry(e, struct thread, donation_elem);
 		if (t->priority > curr->priority)
-			curr->priority = t->priority; // t 우선순위를 내 우선순위로 설정
+			curr->priority = t->priority; // t 남은 기부자 중 더 높은 우선순위가 있으면 그 값으로 갱신
 		e = list_next(e);		      // 아니면 다음으로 이동
 	}
 
-	lock->holder = NULL;
-	sema_up(&lock->semaphore);
+	lock->holder = NULL;	   // 락 소유 해제
+	sema_up(&lock->semaphore); // 대기 스레드 중 가장 높은 우선순위 스레드 깨움
 }
 
 /* Returns true if the current thread holds LOCK, false
