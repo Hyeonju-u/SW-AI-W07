@@ -32,6 +32,8 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+static bool cmp_sema_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -66,7 +68,7 @@ sema_down (struct semaphore *sema) {
 
 	old_level = intr_disable ();
 	while (sema->value == 0) {
-		list_push_back (&sema->waiters, &thread_current ()->elem);
+		list_insert_ordered (&sema->waiters, &thread_current ()->elem, cmp_sema_priority, NULL);
 		thread_block ();
 	}
 	sema->value--;
@@ -103,17 +105,58 @@ sema_try_down (struct semaphore *sema) {
 
    This function may be called from an interrupt handler. */
 void
-sema_up (struct semaphore *sema) {
-	enum intr_level old_level;
+sema_up (struct semaphore *sema)
+{
+   enum intr_level old_level; // 상태 저장
+   struct thread *woken = NULL; //이번에 쓰는 스레드
+   bool should_preempt = false; // 우선순위
 
-	ASSERT (sema != NULL);
+   ASSERT (sema != NULL);
 
-	old_level = intr_disable ();
-	if (!list_empty (&sema->waiters))
-		thread_unblock (list_entry (list_pop_front (&sema->waiters),
-					struct thread, elem));
-	sema->value++;
-	intr_set_level (old_level);
+   old_level = intr_disable ();
+
+   // 맨 앞 스레드를 뽑는다
+   if (!list_empty (&sema->waiters))
+   {
+      woken = list_entry (list_pop_front (&sema->waiters), struct thread, elem);
+      thread_unblock (woken); // 상태: 블락 -> 레디
+   }
+
+   /* 대기자를 깨우는 작업까지 마친 뒤 세마포어 값을 갱신합니다. */
+   sema->value++;
+
+   // 우선순위 확인
+   if (woken != NULL)
+      should_preempt = woken->priority > thread_current ()->priority;
+
+   intr_set_level (old_level);
+
+   // 우선순위 확인 후 실행 순서 바뀌어야 한다면
+   if (should_preempt)
+   {
+      if (intr_context ())
+      {
+         /* 인터럽트 끝난 뒤 스케줄 */
+         intr_yield_on_return ();
+      }
+      else if (old_level == INTR_ON)
+      {
+         /* 일반 문맥에서는 인터럽트를 복구한 뒤 양보한다 */
+         thread_yield ();
+      }
+   }
+}
+
+// 세마포어 우선순위 비교 함수
+static bool
+cmp_sema_priority (const struct list_elem *a,
+                    const struct list_elem *b,
+                    void *aux UNUSED)
+{
+	const struct thread *thread_a = list_entry (a, struct thread, elem);
+	const struct thread *thread_b = list_entry (b, struct thread, elem);
+
+	return thread_a->priority > thread_b->priority;
 }
 
 static void sema_test_helper (void *sema_);

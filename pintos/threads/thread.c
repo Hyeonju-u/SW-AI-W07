@@ -211,7 +211,7 @@ thread_create (const char *name, int priority,
 
 	// 우선순위 높으면 양보
 	if (t->priority > thread_current ()->priority)
-	thread_yield ();
+		thread_yield ();
 
 	return tid;
 }
