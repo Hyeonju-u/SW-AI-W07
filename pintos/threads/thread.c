@@ -29,6 +29,7 @@
 static struct list ready_list; // 레디리스트에 넣을때 우선순위로 넣는다 넣은다음 새 스레드 지금 스레드 우선순위 비교
 // static struct list sleep_list; // sleep list 추가
 /* Idle thread. */
+static struct list donation;
 static struct thread *idle_thread;
 
 /* Initial thread, the thread running init.c:main(). */
@@ -333,7 +334,7 @@ void thread_yield(void)
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void thread_set_priority(int new_priority)
-{
+{ // 도네이션을 고려해서 새로운 우선 순위 설정 새 우선순위를 원래 우선순위로 저장하고 기부받은 값이 더 높으면 그게 유지하도록 해야함
 	thread_current()->priority = new_priority;
 	// struct thread *curr = thread_current();
 	priority_yield();
@@ -431,7 +432,7 @@ kernel_thread(thread_func *function, void *aux)
    NAME. */
 static void
 init_thread(struct thread *t, const char *name, int priority)
-{
+{ // 우선순위 기부에서 쓸 자료 구조를 초기화 함 보통 도네이션 리스트,wait_on_lock같은 필드를 여기에서 초기화
 	ASSERT(t != NULL);
 	ASSERT(PRI_MIN <= priority && priority <= PRI_MAX);
 	ASSERT(name != NULL);
@@ -442,6 +443,9 @@ init_thread(struct thread *t, const char *name, int priority)
 	t->tf.rsp = (uint64_t)t + PGSIZE - sizeof(void *);
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
+	t->init_priority = priority; // 우선순위 초기화
+	t->wait_on_lock = NULL;	     // wait_on_lock 초기화
+	list_init(&t->donation);     // 기부명단 초기화
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
